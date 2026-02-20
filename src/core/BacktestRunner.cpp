@@ -4,6 +4,7 @@
 #include "core/EngineCtxBridge.h"
 #include "strategy/PluginLoader.h"
 #include "results/RunRecorder.h"
+#include "features/RunPackWriter.h"
 #include <cstdio>
 #include <exception>
 #include <stdexcept>
@@ -166,6 +167,23 @@ public:
             PRINT_LAST("Sortino", r.sortino_ratio, "%.2f");
 
             std::printf("Backtest Completed. Final Equity: %.2f\n", br.equity());
+
+            // after backtest
+            RunPackWriter w;
+            RunPackWriter::Meta meta;
+            // meta.created_unix_ms = /* now in ms */;
+            meta.meta_json = R"({"symbol":"EURUSD","tf":"M1","strategy":"EmaFlipStrategy","params":{"ema_period":50,"lots":0.1}})";
+
+            std::string err;
+            bool ok = w.write("runs/run_000001.rpack", meta, rec.series(), rec.trades(), &err);
+            if (!ok)
+            {
+                std::printf("RunPack write failed: %s\n", err.c_str());
+            }
+            else
+            {
+                std::printf("Saved runpack.\n");
+            }
         }
         catch (const std::exception &e)
         {

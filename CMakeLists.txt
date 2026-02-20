@@ -64,6 +64,7 @@ target_link_libraries(backtest PRIVATE PRIVATE glfw opengl32)
 target_sources(backtest PRIVATE
     src/strategy/PluginLoader.cpp
     src/core/EngineCTxBridge.cpp
+    src/features/RunPackWriter.cpp
 )
 
 # Windows-only (mmap uses Windows API)
