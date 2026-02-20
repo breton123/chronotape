@@ -22,6 +22,7 @@ add_executable(backtest
     src/strategy/PluginLoader.cpp
     src/core/BacktestRunner.cpp
     src/broker/BrokerSim.cpp
+    src/results/MetricsEngine.cpp
     external/imgui/imgui.cpp
     external/imgui/imgui_draw.cpp
     external/imgui/imgui_tables.cpp

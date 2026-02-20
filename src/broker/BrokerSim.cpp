@@ -28,7 +28,9 @@ namespace broker
     void BrokerSim::on_bar(int64_t /*ts*/, float mid_price)
     {
         last_mid_ = mid_price;
+        bars_++;
 
+        // IF not in a position. Return
         if (position_lots_ == 0.0f || std::isnan(avg_entry_))
         {
             unrealized_pnl_ = 0.0f;
@@ -41,7 +43,61 @@ namespace broker
         const float units = position_lots_ * spec_.lot_size; // signed
         unrealized_pnl_ = (mid_price - avg_entry_) * units;
 
+        // Balance Drawdowns
+        if (balance_ > max_balance_)
+        {
+            max_balance_ = balance_;
+        }
+        dd_balance_ = balance_ - max_balance_;
+        if (dd_balance_ > 0.0f)
+            dd_balance_ = 0.0f;
+
+        max_balance_dd_ = std::min(max_balance_dd_, balance_ - max_balance_);
+        if (max_balance_dd_ > 0.0f)
+        {
+            max_balance_dd_ = 0.0f;
+        }
+        else
+        {
+            bars_in_balance_drawdown_++;
+            pct_in_balance_drawdown_ = (bars_in_balance_drawdown_ / static_cast<float>(bars_)) * 100;
+        }
+
+        // Equity Drawdowns
+        if (equity_ > max_equity_)
+        {
+            max_equity_ = equity_;
+        }
         equity_ = balance_ + unrealized_pnl_;
+        dd_equity_ = equity_ - max_equity_;
+        if (dd_equity_ > 0.0f)
+            dd_equity_ = 0.0f;
+
+        max_equity_dd_ = std::min(max_equity_dd_, equity_ - max_equity_);
+        if (max_equity_dd_ > 0.0f)
+        {
+            max_equity_dd_ = 0.0f;
+        }
+        else
+        {
+            bars_in_equity_drawdown_++;
+            pct_in_equity_drawdown_ = (bars_in_equity_drawdown_ / static_cast<float>(bars_)) * 100;
+        }
+
+        if (equity_ <= 0.0f)
+        {
+            // Account is blown. Reset everything to avoid weird states.
+            balance_ = 0.0f;
+            equity_ = 0.0f;
+            position_lots_ = 0.0f;
+            avg_entry_ = NAN;
+
+            entry_ts_ = 0;
+            entry_i_ = -1;
+
+            // Note: we keep drawdown and metrics state to reflect the blowup.
+        }
+        //
     }
 
     uint64_t BrokerSim::buy_market(int64_t ts, float mid_price, float lots)
@@ -70,6 +126,12 @@ namespace broker
     {
         if (!(lots > 0.0f))
             return 0;
+
+        if (balance_ <= 0.0f)
+        {
+            // std::cerr << "Account is blown. No further trades allowed.\n";
+            return 0;
+        }
 
         const float hs = half_spread_price();
         const float sl = slippage_price();
@@ -105,6 +167,8 @@ namespace broker
         // (We already mutated, so can't now.) We'll instead store 0 and you can compute from trade log later.
         f.realized_pnl = 0.0f;
 
+        apply_fill(side, ts, fill_price, lots, commission);
+
         fills_.push_back(f);
 
         // update mark-to-market immediately using mid
@@ -113,7 +177,7 @@ namespace broker
         return fills_.back().id;
     }
 
-    void BrokerSim::apply_fill(Side side, int64_t /*ts*/, float fill_price, float lots, float commission)
+    void BrokerSim::apply_fill(Side side, int64_t ts, float fill_price, float lots, float commission)
     {
         // Commission is always charged
         balance_ -= commission;
@@ -125,6 +189,9 @@ namespace broker
         {
             position_lots_ = fill_signed_lots;
             avg_entry_ = fill_price;
+
+            entry_ts_ = ts; // <-- change signature to pass ts into apply_fill
+            entry_i_ = bar_index_;
             return;
         }
 
@@ -165,6 +232,26 @@ namespace broker
         }
         balance_ += realized;
 
+        if (reduce_abs > 0.0f && on_closed_trade_)
+        {
+            ClosedTrade ct;
+            ct.entry_ts = entry_ts_;
+            ct.exit_ts = ts;
+            ct.entry_i = entry_i_;
+            ct.exit_i = bar_index_;
+
+            ct.entry_price = avg_entry_;
+            ct.exit_price = fill_price;
+
+            ct.lots_closed = reduce_abs;
+            ct.side = (position_lots_ > 0.0f) ? Side::Buy : Side::Sell; // original direction
+
+            ct.realized_pnl = realized;
+            ct.commission = commission; // optional; this is closing fill commission, may include open/close later
+
+            on_closed_trade_(on_closed_trade_user_, ct);
+        }
+
         // Now compute new net position
         const float new_lots = position_lots_ + fill_signed_lots;
 
@@ -173,6 +260,9 @@ namespace broker
             // flat
             position_lots_ = 0.0f;
             avg_entry_ = NAN;
+            entry_ts_ = 0;
+            entry_i_ = -1;
+
             return;
         }
 
@@ -187,6 +277,9 @@ namespace broker
         // flipped: the remaining part opens a new position at fill price
         position_lots_ = new_lots;
         avg_entry_ = fill_price;
+
+        entry_ts_ = ts;
+        entry_i_ = bar_index_;
     }
 
 } // namespace broker

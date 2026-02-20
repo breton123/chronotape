@@ -3,6 +3,7 @@
 #include "broker/BrokerSim.h"
 #include "core/EngineCtxBridge.h"
 #include "strategy/PluginLoader.h"
+#include "results/RunRecorder.h"
 #include <cstdio>
 #include <exception>
 #include <stdexcept>
@@ -12,9 +13,31 @@
 using namespace datahandler;
 using namespace features;
 
+#define PRINT_LAST(name, vec, fmt) \
+    std::printf("%-30s : " fmt "\n", name, (vec).back())
+
 class BacktestRunner
 {
 public:
+    static void on_closed_trade_cb(void *user, const broker::ClosedTrade &ct)
+    {
+        auto *rec = reinterpret_cast<RunRecorder *>(user);
+
+        ClosedTrade t{};
+        t.entry_ts = ct.entry_ts;
+        t.exit_ts = ct.exit_ts;
+        t.entry_i = ct.entry_i;
+        t.exit_i = ct.exit_i;
+        t.lots = ct.lots_closed;
+        t.entry_price = ct.entry_price;
+        t.exit_price = ct.exit_price;
+        t.pnl = ct.realized_pnl;
+        t.side = (ct.side == broker::Side::Buy) ? TradeSide::Long : TradeSide::Short;
+        // t.hold_bars = t.exit_i - t.entry_i;
+
+        rec->on_trade_closed(t);
+    }
+
     void run()
     {
         std::setvbuf(stdout, nullptr, _IONBF, 0);
@@ -36,6 +59,13 @@ public:
             broker::SymbolSpec spec{0.0001f, 100000.0f};
             broker::CostsModel costs{0.8f, 0.1f, 0.0f};
             broker::BrokerSim br(spec, costs, 100000.0f);
+
+            // Create Metrics Tracker
+            RunRecorder rec({100000.0f, 252 * 24 * 60});
+            LONG64 expected_bars = (end_ymd - start_ymd + 1) * 24 * 60; // lol stack overflow incoming
+            rec.reserve(expected_bars, 5000);
+
+            br.set_on_closed_trade(&on_closed_trade_cb, &rec);
 
             // Create feature manager
             FeatureManager fm;
@@ -83,6 +113,10 @@ public:
                 fm.update(bar.open, bar.high, bar.low, bar.close, bar.volume);
                 br.on_bar(bar.ts_ns, bar.close);
 
+                const bool in_market = (br.position_lots() != 0.0f);
+                rec.on_bar(bar.ts_ns, br.balance(), br.equity(), br.unrealized_pnl(), in_market);
+                br.set_bar_index((int)i);
+
                 // append feature values to arrays (NaN until ready)
                 user.ema_cache[50].push_back(ema50.stream->ready ? ema50.stream->value : NAN);
                 user.atr_cache[14].push_back(atr14.stream->ready ? atr14.stream->value : NAN);
@@ -104,6 +138,32 @@ public:
             }
 
             plugin.on_end(&ctx);
+            auto m = br.metrics();
+            std::printf("Metrics: bars=%d, balance=%.2f, equity=%.2f, max_equity=%.2f, net_profit=%.2f, total_trades=%d, max_balance=%.2f, max_drawdown=%.2f\n", m.bars, m.balance, m.equity, m.max_equity, m.net_profit, m.total_trades, m.max_balance, m.max_balance_dd);
+
+            const auto &r = rec.series();
+
+            std::printf("Recorded %zu bars\n\n", r.ts.size());
+
+            PRINT_LAST("Balance", r.balance, "%.2f");
+            PRINT_LAST("Equity", r.equity, "%.2f");
+            PRINT_LAST("Net Profit", r.net_profit, "%.2f");
+
+            PRINT_LAST("Max Equity DD", r.max_equity_dd, "%.2f");
+            PRINT_LAST("Max Balance DD", r.max_balance_dd, "%.2f");
+            PRINT_LAST("Pct in Equity DD", r.pct_in_equity_drawdown, "%.2f");
+
+            PRINT_LAST("Trades", r.total_trades, "%d");
+            PRINT_LAST("Winning Trades", r.winning_trades, "%d");
+            PRINT_LAST("Losing Trades", r.losing_trades, "%d");
+            PRINT_LAST("Win Rate", r.win_rate, "%.4f");
+
+            PRINT_LAST("Profit Factor", r.profit_factor, "%.2f");
+            PRINT_LAST("Expectancy", r.expected_value, "%.4f");
+
+            PRINT_LAST("Sharpe", r.sharpe_ratio, "%.2f");
+            PRINT_LAST("Calmar", r.calmar_ratio, "%.2f");
+            PRINT_LAST("Sortino", r.sortino_ratio, "%.2f");
 
             std::printf("Backtest Completed. Final Equity: %.2f\n", br.equity());
         }
