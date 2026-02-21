@@ -44,6 +44,11 @@ void MetricsEngine::reserve(size_t bars, size_t trades_guess)
     closed_pnls_.reserve(trades_guess);
 }
 
+void MetricsEngine::finalize()
+{
+    update_tail_stats();
+}
+
 void MetricsEngine::on_trade_closed(const ClosedTrade &t)
 {
     trades_.add_closed(t);
@@ -115,38 +120,12 @@ void MetricsEngine::on_bar(int64_t ts, float balance, float equity, float unreal
         bars_in_mkt++;
     const float time_in_market = (bars_seen > 0) ? (float)bars_in_mkt / (float)bars_seen : 0.0f;
 
-    // median + top10% contribution (expensive if done per bar exactly)
-    // For v1: update every N bars or at end. Here we do a cheap “mostly-up-to-date” update every 500 bars.
     float median_pnl = NAN;
     float top10_contrib = NAN;
-    if (!closed_pnls_.empty())
-    {
-        if ((series_.ts.size() % 500) == 0 || series_.ts.size() < 10)
-        {
-            // median
-            auto tmp = closed_pnls_;
-            size_t mid = tmp.size() / 2;
-            std::nth_element(tmp.begin(), tmp.begin() + mid, tmp.end());
-            median_pnl = tmp[mid];
-
-            // top 10% contribution to gross profit
-            std::sort(tmp.begin(), tmp.end(), std::greater<float>());
-            const size_t k = std::max<size_t>(1, (size_t)std::ceil(tmp.size() * 0.10));
-            double top_sum = 0.0;
-            for (size_t j = 0; j < k; ++j)
-                if (tmp[j] > 0.0f)
-                    top_sum += tmp[j];
-            top10_contrib = (gross_profit_ > 0.0) ? (float)(top_sum / gross_profit_) : NAN;
-        }
-        else
-        {
-            // carry forward last computed values if available
-            if (!series_.median_pnl.empty())
-                median_pnl = series_.median_pnl.back();
-            if (!series_.top_10_percent_contribution.empty())
-                top10_contrib = series_.top_10_percent_contribution.back();
-        }
-    }
+    if (!series_.median_pnl.empty())
+        median_pnl = series_.median_pnl.back();
+    if (!series_.top_10_percent_contribution.empty())
+        top10_contrib = series_.top_10_percent_contribution.back();
 
     // volatility/sharpe/sortino (bar-based on log returns)
     float vol = NAN, sharpe = NAN, sortino = NAN;
@@ -333,4 +312,32 @@ void MetricsEngine::update_return_stats(float equity)
         down_mean += d / (double)down_n_;
         down_M2_ += d * (r - down_mean);
     }
+}
+
+void MetricsEngine::update_tail_stats()
+{
+    if (closed_pnls_.empty() || series_.ts.empty())
+        return;
+
+    auto tmp = closed_pnls_;
+    const size_t n = tmp.size();
+    const size_t mid = n / 2;
+
+    std::nth_element(tmp.begin(), tmp.begin() + mid, tmp.end());
+    const float median_pnl = tmp[mid];
+
+    std::sort(tmp.begin(), tmp.end(), std::greater<float>());
+    const size_t k = std::max<size_t>(1, (size_t)std::ceil(n * 0.10));
+    double top_sum = 0.0;
+    for (size_t j = 0; j < k; ++j)
+    {
+        if (tmp[j] > 0.0f)
+            top_sum += tmp[j];
+    }
+    const float top10_contrib = (gross_profit_ > 0.0)
+                                    ? (float)(top_sum / gross_profit_)
+                                    : NAN;
+
+    series_.median_pnl.assign(series_.ts.size(), median_pnl);
+    series_.top_10_percent_contribution.assign(series_.ts.size(), top10_contrib);
 }

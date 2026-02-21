@@ -1,4 +1,9 @@
 #include "RunPackWriter.h"
+#include <filesystem>
+
+namespace {
+    namespace fs = std::filesystem;
+}
 
 static constexpr uint64_t ALIGN8(uint64_t x) { return (x + 7ull) & ~7ull; }
 
@@ -155,6 +160,20 @@ bool RunPackWriter::write(const std::string &path,
 
     // Convert trades to packed disk format
     auto tvec = convert_trades(trades);
+
+    // Ensure output directory exists
+    try
+    {
+        fs::path p(path);
+        if (p.has_parent_path())
+        {
+            fs::create_directories(p.parent_path());
+        }
+    }
+    catch (const std::exception &)
+    {
+        return fail("Failed to create directory for: " + path);
+    }
 
     std::ofstream f(path, std::ios::binary | std::ios::trunc);
     if (!f)

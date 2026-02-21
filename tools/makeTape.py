@@ -126,16 +126,21 @@ def build(csv_path, outdir, symbol, stride):
 
 
 def main():
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--csv", required=True, help="Year CSV file (no header)")
-    ap.add_argument("--symbol", required=True, help="Symbol name")
-    ap.add_argument("--outdir", default="tapes_1m", help="Output directory")
-    ap.add_argument("--stride", type=int, default=720,
-                    help="Index stride (bars)")
-    args = ap.parse_args()
+    start_year = 2000
+    end_year = 2025
+    symbol = "EURUSD"
+    stride = 720
 
-    build(args.csv, args.outdir, args.symbol, args.stride)
-
+    for i in range(start_year, end_year):
+        csv = f"C:\\Users\\louis\\Desktop\\Project\\chronotape\\DAT_MT_EURUSD_M1_{i}.csv"
+        print(csv)
+        outdir = f"C:\\Users\\louis\\Desktop\\Project\\chronotape\\data\\tapes\\bars\\EURUSD\\1m\\{i}"
+        print(outdir)
+        if not os.path.exists(outdir):
+            os.makedirs(outdir)
+        print("Building tape...")
+        build(csv, outdir, symbol, stride)
+        print("Tape built successfully")
 
 if __name__ == "__main__":
     main()

@@ -19,6 +19,7 @@ public:
 
     void reset();
     void reserve(size_t bars, size_t trades_guess = 0);
+    void finalize();
 
     // Call when a trade closes
     void on_trade_closed(const ClosedTrade &t);
@@ -39,7 +40,7 @@ private:
     void update_daily_dd(int64_t ts, float equity, float balance);
     void update_trade_aggregates();
     void update_return_stats(float equity);
-    void update_tail_stats(); // median/top10 contribution
+    void update_tail_stats(); // median/top10 contribution (called from finalize)
     float safe_div(float a, float b) const { return (b != 0.0f) ? (a / b) : NAN; }
 
     MetricsConfig cfg_;

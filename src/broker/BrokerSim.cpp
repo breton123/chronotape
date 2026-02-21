@@ -130,6 +130,7 @@ namespace broker
         if (balance_ <= 0.0f)
         {
             // std::cerr << "Account is blown. No further trades allowed.\n";
+            account_blown_ = true;
             return 0;
         }
 
@@ -181,6 +182,7 @@ namespace broker
     {
         // Commission is always charged
         balance_ -= commission;
+        lots = lots / 1000;  //LOWERING JUST FOR TESTING
 
         const float fill_signed_lots = (side == Side::Buy) ? lots : -lots;
 

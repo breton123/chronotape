@@ -8,6 +8,7 @@ public:
 
     void reset() { metrics_.reset(); }
     void reserve(size_t bars, size_t trades_guess = 0) { metrics_.reserve(bars, trades_guess); }
+    void finalize() { metrics_.finalize(); }
 
     // per bar
     inline void on_bar(int64_t ts, float balance, float equity, float unrealized, bool in_market)

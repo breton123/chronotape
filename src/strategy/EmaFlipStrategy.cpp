@@ -16,6 +16,8 @@
 #include <string>
 #include <cstdlib>
 #include <cmath>
+#include <iostream>
+#include <ostream>
 
 static int parse_int_param(const char *json, const char *key, int defv)
 {
@@ -140,9 +142,11 @@ extern "C"
         s->prev_ema = ema_now;
     }
 
-    STRAT_API void strategy_on_end(StrategyHandle, EngineCtx *)
+    STRAT_API void strategy_on_end(StrategyHandle, EngineCtx *ctx)
     {
         // no-op
+        ctx->close_all(ctx);
+        std::cout << "Closing all positions" << std::endl;
     }
 
 } // extern "C"

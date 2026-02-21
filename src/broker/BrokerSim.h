@@ -126,6 +126,7 @@ namespace broker
         uint64_t close_all(int64_t ts, float mid_price);
 
         // State
+        bool account_blown() const { return account_blown_; }
         float balance() const { return balance_; }
         float equity() const { return equity_; }
         float unrealized_pnl() const { return unrealized_pnl_; }
@@ -207,7 +208,7 @@ namespace broker
         float calmar_ratio_ = 0.0f;
         float sortino_ratio_ = 0.0f;
         float no_trade_rate_ = 0.0f;
-
+        bool account_blown_ = false;
         float position_lots_ = 0.0f; // +long, -short
         float avg_entry_ = NAN;      // valid if position_lots_ != 0
 
